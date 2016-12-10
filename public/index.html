@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eisenclock</title>
+</head>
+<body>
+
+<style>
+html, body { font-size: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif; }
+
+#settings, #ttt { margin: 10px; }
+
+.board { width: 160px; height: 160px; }
+.row { margin: 0; padding: 0; height: 50px; width: 100%; }
+.cell { margin: 0; padding: 0; display: inline-block; width: 50px; height: 50px; border: 1px solid gray; }
+.cell.player1 { background: 10px 10px url('/assets/tick.png') no-repeat; }
+.cell.player2 { background: 10px 10px url('/assets/cross.png') no-repeat; }
+</style>
+
+<div id="ttt">Loading...</div>
+
+<script src="js/react-with-addons.min.js"></script>
+<script src="js/react-dom.min.js"></script>
+<script src="js/browser.min.js"></script>
+<script type="text/babel">
+
+/* Vanilla Javascript functions to do HTTP GET/POST requests. */
+function httpGet(url, cb) {
+  var xhr;
+  if (window.XDomainRequest) {
+    xhr = new XDomainRequest();
+    xhr.onload = function(){ cb(xhr.responseText); };
+  } else if (window.XMLHttpRequest) {
+    xhr = new XMLHttpRequest();
+  } else {
+    xhr = new ActiveXObject("Microsoft.xhr");
+  }
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState == 4 && xhr.status == 200) {
+      cb(xhr.responseText, true);
+    } else if (xhr.readyState == 4 && xhr.status != 200) {
+      cb(null);
+    }
+  };
+  xhr.open("GET", url, true);
+  xhr.send();
+}
+
+function httpPost(url, data, cb) {
+  var xhr;
+  if (window.XDomainRequest) {
+    xhr = new XDomainRequest();
+    xhr.onload = function(){ cb(xhr.responseText); };
+  } else if (window.XMLHttpRequest) {
+    xhr = new XMLHttpRequest();
+  } else {
+    xhr = new ActiveXObject("Microsoft.xhr");
+  }
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState == 4 && xhr.status == 200) {
+      cb(xhr.responseText, true);
+    } else if (xhr.readyState == 4 && xhr.status != 200) {
+      cb(null);
+    }
+  };
+  xhr.open("POST", url, true);
+  xhr.setRequestHeader("Content-type", "application/json"); // JSON only
+  xhr.send(data);
+}
+
+
+var TicTacToe = React.createClass({
+  getInitialState: function(){
+    return {
+      updateUrl: this.props.baseUrl + "/api/update_game",
+      activePlayer: 1, // alternates between 1 and 2
+      state: this.props.state,
+      isLocked: false, // true if waiting for server response
+      winner: 0
+    };
+  },
+  onClick: function(event) {
+    if (this.state.isLocked) return;
+
+    if (event.target.classList.contains("empty")) {
+      // update game state, id is the index
+      var id = parseInt(event.target.id);
+      var gameState = this.state.state;
+      gameState[id] = this.state.activePlayer;
+
+      var this_ = this;
+      httpPost(this.state.updateUrl,
+        JSON.stringify(this.state.state),
+        function(result) {
+          result = JSON.parse(result);
+          if (result[0] == 0) {
+            var player = (this_.state.activePlayer == 1) ? 2 : 1;
+            this_.setState({isLocked: false, activePlayer: player});
+          } else {
+            // game has ended
+            this_.setState({winner: result[0]});
+          }
+      });
+
+      // while waiting for server to respond, disable click handling
+      this.setState({isLocked: true, state: gameState});
+    }
+  },
+  cellClassName: function(num) {
+    if (num == 0) {
+      return "cell empty";
+    } else {
+      return "cell player" + num;
+    }
+  },
+  onNewGame: function() {
+    this.props.onNewGame();
+  },
+
+  render: function() {
+    if (this.state.winner > 0) {
+      return (
+        <div className="board">
+          <div className={this.cellClassName(this.state.winner)}></div> has won!
+          <button onClick={this.onNewGame}>New Game</button>
+        </div>
+      );
+    } else {
+      return (
+        <div className="board">
+          <div className="row">
+            <div id="0" className={this.cellClassName(this.state.state[0])} onClick={this.onClick}></div>
+            <div id="1" className={this.cellClassName(this.state.state[1])} onClick={this.onClick}></div>
+            <div id="2" className={this.cellClassName(this.state.state[2])} onClick={this.onClick}></div>
+          </div>
+          <div className="row">
+            <div id="3" className={this.cellClassName(this.state.state[3])} onClick={this.onClick}></div>
+            <div id="4" className={this.cellClassName(this.state.state[4])} onClick={this.onClick}></div>
+            <div id="5" className={this.cellClassName(this.state.state[5])} onClick={this.onClick}></div>
+          </div>
+          <div className="row">
+            <div id="6" className={this.cellClassName(this.state.state[6])} onClick={this.onClick}></div>
+            <div id="7" className={this.cellClassName(this.state.state[7])} onClick={this.onClick}></div>
+            <div id="8" className={this.cellClassName(this.state.state[8])} onClick={this.onClick}></div>
+          </div>
+        </div>
+      );
+    }
+  }
+});
+
+var RootWidget = React.createClass({
+  getInitialState: function(){
+    return {
+      baseUrl: "http://localhost:8080",
+      initialState: null,
+      serverError: null
+    };
+  },
+  startGame: function(event){
+    event.preventDefault();
+
+    var baseUrl = document.getElementById("server").getAttribute("value");
+    var url = baseUrl + "/api/get_game";
+    var this_ = this;
+    httpGet(url, function(result) {
+      if (!result) {
+        this_.setState({serverError: "Server cannot be reached."});
+      }
+      var state = JSON.parse(result);
+      this_.setState({initialState: state});
+    });
+  },
+  startNewGame: function() {
+    this.setState({initialState: null});
+  },
+
+  render: function(){
+    return(
+      <div>
+        {!this.state.initialState ?
+          <div>
+            <input id="server" type="text" size="25" value={this.state.baseUrl} />
+            <button onClick={this.startGame}>Start Game</button>
+          </div>
+          : null}
+        {this.state.initialState ?
+          <TicTacToe state={this.state.initialState}
+            baseUrl={this.state.baseUrl}
+            onNewGame={this.startNewGame} />
+         : null}
+      </div>
+    );
+  }
+});
+
+ReactDOM.render(
+  <RootWidget />,
+  document.getElementById("ttt")
+);
+
+</script>
+</body>
+</html>
